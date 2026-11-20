@@ -53,3 +53,5 @@ dkms.conf
 
 # debug information files
 *.dwo
+tests/test_packet.c
+tests/test_packet.exe
