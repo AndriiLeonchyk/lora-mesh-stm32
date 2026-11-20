@@ -3,19 +3,28 @@
 Experimental LoRa mesh network with AES encryption on STM32 (C).
 
 ## Status
-Work in progress. Currently done: ...
-Planned: ...
+Work in progress (started November 2026). 
+Currently done: 
+- Repository structure
+- Project goals and packet format design (see `docs/protocol.md`)
+Planned: 
+- Hardware has been ordered; firmware development starts when it arrives
+- Mesh logic developed and tested in simulation first (Python / C on PC)
 
 ## Features (planned)
-- SX1276 SPI driver
-- Flooding with TTL and deduplication
-- Random backoff retransmission
-- AES-CCM payload encryption
-- Python test tools
+- SX1276 (RFM95W) driver over SPI
+- Custom packet format with CRC16
+- Flooding with TTL and message deduplication
+- Retransmission with random backoff
+- Neighbor discovery with HELLO packets
+- AES-CCM payload encryption with replay protection
+- Python tools for testing and measurements
 
 ## Hardware
-- STM32 (Blue Pill / Nucleo)
-- SX1276 module (Ra-02 / RFM95)
+- 2 × STM32F103C8T6 ("Blue Pill") boards
+- ST-Link V2 programmer (SWD)
+- 2 × HopeRF RFM95W-868 (SX1276) LoRa modules, 868 MHz
+- Antennas for 868 MHz
 
 ## Packet format
 (table or description)
@@ -24,10 +33,13 @@ Planned: ...
 (steps)
 
 ## Test results
-(table of range / RSSI / SF)
+-Implement packet serialization with CRC16 and unit tests
 
 ## Limitations
-(what is simulated, what is tested on hardware)
+- Early-stage educational project, not production-ready
+- Until the hardware is in place, mesh logic is verified only in simulation, not over real radio
+- Real-world range and reliability have not been measured yet
+- Encryption design is not security-audited
 
 ## License
 MIT
