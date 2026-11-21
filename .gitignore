@@ -58,3 +58,8 @@ tests/test_packet.exe
 
 # CMake build output (contains absolute paths, regenerated on build)
 build/
+
+# Host test binaries
+tests/*.exe
+tests/test_crc16
+tests/test_packet_edge

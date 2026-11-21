@@ -30,10 +30,22 @@ Planned:
 (table or description)
 
 ## Build & run
-(steps)
+### Host unit tests (PC)
+Requires `gcc` on PATH (for example MSYS2 UCRT64). From the repository root:
+```
+.\tests\run_tests.ps1
+```
+
+### STM32 firmware
+Open `platform/stm32/blink` in VS Code with the STM32Cube extension and run **Build**.
 
 ## Test results
-- Implement packet serialization with CRC16 and unit tests. All tests passed.
+Host unit tests for the mesh core (`core/`), run on a PC:
+- `tests/test_packet.c`: packet round trip, CRC error, version, length and argument checks
+- `tests/test_crc16.c`: CRC-16/CCITT-FALSE check values, every single-bit error detected, residue property
+- `tests/test_packet_edge.c`: empty payload, all frame types, wire layout, field extremes, any bit flip in a frame rejected, length and size boundaries
+
+All three suites pass. The firmware has not been tested on hardware yet.
 
 ## Limitations
 - Early-stage educational project, not production-ready
