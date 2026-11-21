@@ -53,5 +53,8 @@ dkms.conf
 
 # debug information files
 *.dwo
-tests/test_packet.c
+tests/test_packet
 tests/test_packet.exe
+
+# CMake build output (contains absolute paths, regenerated on build)
+build/
