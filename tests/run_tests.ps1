@@ -6,8 +6,8 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$core  = @("core/crc16.c", "core/packet.c")
-$tests = @("test_packet", "test_crc16", "test_packet_edge")
+$core  = @("core/crc16.c", "core/packet.c", "core/dedup.c", "core/mesh.c")
+$tests = @("test_packet", "test_crc16", "test_packet_edge", "test_mesh")
 $failed = 0
 
 foreach ($t in $tests) {

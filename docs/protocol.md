@@ -1,6 +1,6 @@
 # Mesh protocol (draft v1)
 
-Status: design draft, not yet implemented.
+Status: frame format, deduplication and forwarding decisions are implemented and unit-tested on a PC (`core/`). Radio, HELLO handling and encryption are not implemented yet.
 
 ## Frame format
 
@@ -29,6 +29,15 @@ Header is 10 bytes, CRC is 2 bytes, so the maximum payload without encryption is
 5. If `dst` is not this node (or is broadcast) and `ttl` > 1, decrement `ttl`, recompute the CRC, wait a random backoff delay, and retransmit.
 
 The random backoff reduces collisions when several nodes receive the same frame and try to forward it at once.
+
+### Implementation notes (`core/mesh.c`, `core/dedup.c`)
+
+- A node also drops a frame whose `src` is its own address (its own message echoed back by a neighbor). Packets created with `mesh_node_build()` are added to the seen-cache at once.
+- A frame with `ttl` = 0 is treated as invalid and dropped.
+- A frame addressed to this node is delivered and never forwarded.
+- The seen-cache holds the last 32 (`src`, `msg_id`) pairs (`MESH_DEDUP_SIZE`, 128 bytes of RAM). When full, the oldest entry is overwritten.
+- `mesh_node_handle_rx()` returns flags: `DELIVER`, `FORWARD`, both (broadcast), or none (drop, with a reason: invalid, own, duplicate, ttl expired). It does not touch the radio; the caller serializes the forwarded copy (which recomputes the CRC) and sends it after `mesh_backoff_ms()`.
+- `mesh_backoff_ms()` takes the random number as an argument, so the same code runs on the STM32 (hardware randomness) and in PC tests.
 
 ## HELLO frames
 

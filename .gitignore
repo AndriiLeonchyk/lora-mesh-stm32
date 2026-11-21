@@ -63,3 +63,4 @@ build/
 tests/*.exe
 tests/test_crc16
 tests/test_packet_edge
+tests/test_mesh

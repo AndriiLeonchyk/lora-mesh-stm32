@@ -7,6 +7,9 @@ Work in progress (started November 2026).
 Currently done: 
 - Repository structure
 - Project goals and packet format design (see `docs/protocol.md`)
+- Packet serialization with CRC16 (`core/packet.c`)
+- Mesh core: message deduplication, flooding forward decisions with TTL, random backoff (`core/dedup.c`, `core/mesh.c`)
+- Host unit tests for all of the above
 Planned: 
 - Hardware has been ordered; firmware development starts when it arrives
 - Mesh logic developed and tested in simulation first (Python / C on PC)
@@ -44,8 +47,9 @@ Host unit tests for the mesh core (`core/`), run on a PC:
 - `tests/test_packet.c`: packet round trip, CRC error, version, length and argument checks
 - `tests/test_crc16.c`: CRC-16/CCITT-FALSE check values, every single-bit error detected, residue property
 - `tests/test_packet_edge.c`: empty payload, all frame types, wire layout, field extremes, any bit flip in a frame rejected, length and size boundaries
+- `tests/test_mesh.c`: deduplication cache (including eviction), deliver/forward/drop decisions, own-packet echo, packet building and `msg_id` wrap-around, backoff range, a 4-node multi-hop line scenario
 
-All three suites pass. The firmware has not been tested on hardware yet.
+All four suites pass. The firmware has not been tested on hardware yet.
 
 ## Limitations
 - Early-stage educational project, not production-ready
