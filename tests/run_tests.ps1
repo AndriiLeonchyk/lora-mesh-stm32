@@ -7,12 +7,12 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
 $core  = @("core/crc16.c", "core/packet.c", "core/dedup.c", "core/mesh.c")
-$tests = @("test_packet", "test_crc16", "test_packet_edge", "test_mesh")
+$tests = @("test_packet", "test_crc16", "test_packet_edge", "test_mesh", "test_sx1276_regs")
 $failed = 0
 
 foreach ($t in $tests) {
     $exe = "tests/$t.exe"
-    & gcc -std=c11 -Wall -Wextra -Werror -Icore @core "tests/$t.c" -o $exe
+    & gcc -std=c11 -Wall -Wextra -Werror -Icore -Iradio @core "tests/$t.c" -o $exe
     if ($LASTEXITCODE -ne 0) {
         Write-Host "BUILD FAILED: $t" -ForegroundColor Red
         $failed++
