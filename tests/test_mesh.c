@@ -86,7 +86,7 @@ static void test_unicast_for_me_delivered_not_forwarded(void)
     mesh_node_t n;
     mesh_packet_t fwd;
     mesh_drop_reason_t why;
-    mesh_node_init(&n, 0x0002);
+    mesh_node_init(&n, 0x0002, 0);
 
     mesh_packet_t p = rx_packet(0x0001, 0x0002, 1, 5);
     uint8_t a = mesh_node_handle_rx(&n, &p, &fwd, &why);
@@ -98,7 +98,7 @@ static void test_unicast_for_other_forwarded_with_ttl_minus_one(void)
 {
     mesh_node_t n;
     mesh_packet_t fwd;
-    mesh_node_init(&n, 0x0002);
+    mesh_node_init(&n, 0x0002, 0);
 
     mesh_packet_t p = rx_packet(0x0001, 0x0003, 1, 5);
     uint8_t a = mesh_node_handle_rx(&n, &p, &fwd, NULL);
@@ -113,7 +113,7 @@ static void test_broadcast_delivered_and_forwarded(void)
 {
     mesh_node_t n;
     mesh_packet_t fwd;
-    mesh_node_init(&n, 0x0002);
+    mesh_node_init(&n, 0x0002, 0);
 
     mesh_packet_t p = rx_packet(0x0001, MESH_ADDR_BROADCAST, 1, 3);
     uint8_t a = mesh_node_handle_rx(&n, &p, &fwd, NULL);
@@ -125,7 +125,7 @@ static void test_broadcast_last_hop_delivered_only(void)
 {
     mesh_node_t n;
     mesh_packet_t fwd;
-    mesh_node_init(&n, 0x0002);
+    mesh_node_init(&n, 0x0002, 0);
 
     mesh_packet_t p = rx_packet(0x0001, MESH_ADDR_BROADCAST, 1, 1);
     CHECK(mesh_node_handle_rx(&n, &p, &fwd, NULL) == MESH_ACTION_DELIVER);
@@ -136,7 +136,7 @@ static void test_for_other_ttl_one_dropped(void)
     mesh_node_t n;
     mesh_packet_t fwd;
     mesh_drop_reason_t why;
-    mesh_node_init(&n, 0x0002);
+    mesh_node_init(&n, 0x0002, 0);
 
     mesh_packet_t p = rx_packet(0x0001, 0x0003, 1, 1);
     CHECK(mesh_node_handle_rx(&n, &p, &fwd, &why) == MESH_ACTION_DROP);
@@ -148,7 +148,7 @@ static void test_duplicate_dropped(void)
     mesh_node_t n;
     mesh_packet_t fwd;
     mesh_drop_reason_t why;
-    mesh_node_init(&n, 0x0002);
+    mesh_node_init(&n, 0x0002, 0);
 
     mesh_packet_t p = rx_packet(0x0001, 0x0003, 7, 5);
     CHECK(mesh_node_handle_rx(&n, &p, &fwd, &why) == MESH_ACTION_FORWARD);
@@ -164,7 +164,7 @@ static void test_own_packet_echo_dropped(void)
     mesh_node_t n;
     mesh_packet_t out, fwd;
     mesh_drop_reason_t why;
-    mesh_node_init(&n, 0x0002);
+    mesh_node_init(&n, 0x0002, 0);
 
     const uint8_t data[] = { 1, 2, 3 };
     CHECK(mesh_node_build(&n, &out, MESH_TYPE_DATA, MESH_ADDR_BROADCAST, 3,
@@ -181,7 +181,7 @@ static void test_invalid_input_dropped(void)
     mesh_node_t n;
     mesh_packet_t fwd;
     mesh_drop_reason_t why;
-    mesh_node_init(&n, 0x0002);
+    mesh_node_init(&n, 0x0002, 0);
 
     mesh_packet_t p = rx_packet(0x0001, 0x0002, 1, 0); /* ttl 0 */
     CHECK(mesh_node_handle_rx(&n, &p, &fwd, &why) == MESH_ACTION_DROP);
@@ -200,7 +200,7 @@ static void test_build_fills_fields_and_increments_id(void)
 {
     mesh_node_t n;
     mesh_packet_t a, b;
-    mesh_node_init(&n, 0x0042);
+    mesh_node_init(&n, 0x0042, 0);
 
     const uint8_t data[] = { 'h', 'i' };
     CHECK(mesh_node_build(&n, &a, MESH_TYPE_DATA, 0x0007, 4, data, 2) == MESH_OK);
@@ -216,8 +216,7 @@ static void test_build_msg_id_wraps(void)
 {
     mesh_node_t n;
     mesh_packet_t a, b;
-    mesh_node_init(&n, 0x0001);
-    n.next_msg_id = 0xFFFF;
+    mesh_node_init(&n, 0x0001, 0xFFFF);
     CHECK(mesh_node_build(&n, &a, MESH_TYPE_HELLO, MESH_ADDR_BROADCAST, 1, NULL, 0) == MESH_OK);
     CHECK(mesh_node_build(&n, &b, MESH_TYPE_HELLO, MESH_ADDR_BROADCAST, 1, NULL, 0) == MESH_OK);
     CHECK(a.msg_id == 0xFFFF);
@@ -230,7 +229,7 @@ static void test_build_rejects_bad_arguments(void)
     mesh_packet_t p;
     uint8_t big[MESH_MAX_PAYLOAD + 1];
     memset(big, 0, sizeof(big));
-    mesh_node_init(&n, 1);
+    mesh_node_init(&n, 1, 0);
 
     CHECK(mesh_node_build(&n, &p, MESH_TYPE_DATA, 2, 0, NULL, 0) == MESH_ERR_ARGS);    /* ttl 0 */
     CHECK(mesh_node_build(&n, &p, MESH_TYPE_DATA, 2, 3, NULL, 5) == MESH_ERR_ARGS);    /* no data */
@@ -238,6 +237,62 @@ static void test_build_rejects_bad_arguments(void)
     CHECK(mesh_node_build(&n, NULL, MESH_TYPE_DATA, 2, 3, NULL, 0) == MESH_ERR_ARGS);
     CHECK(mesh_node_build(&n, &p, MESH_TYPE_DATA, 2, 3, big,
                           (uint8_t)(MESH_MAX_PAYLOAD + 1)) == MESH_ERR_TOO_LONG);
+}
+
+static void test_build_starts_from_first_msg_id(void)
+{
+    mesh_node_t n;
+    mesh_packet_t p;
+    mesh_node_init(&n, 0x0001, 0x1234);
+    CHECK(mesh_node_build(&n, &p, MESH_TYPE_DATA, 2, 3, NULL, 0) == MESH_OK);
+    CHECK(p.msg_id == 0x1234);
+}
+
+static void test_build_rejects_unknown_type(void)
+{
+    mesh_node_t n;
+    mesh_packet_t p;
+    mesh_node_init(&n, 1, 0);
+    CHECK(mesh_node_build(&n, &p, 0x7F, 2, 3, NULL, 0) == MESH_ERR_TYPE);
+    CHECK(n.next_msg_id == 0); /* a failed build does not use up an id */
+}
+
+/* ---------------- reboot ---------------- */
+
+/* Node 1 sends 5 messages, then reboots. Its neighbor (node 2) still
+ * remembers (1, 0..4). This shows why the first msg_id must change at boot. */
+static void test_reboot_same_start_id_is_dropped(void)
+{
+    mesh_node_t n1, n2;
+    mesh_packet_t p, fwd;
+    mesh_drop_reason_t why;
+    mesh_node_init(&n1, 1, 0);
+    mesh_node_init(&n2, 2, 0);
+    for (int i = 0; i < 5; i++) {
+        CHECK(mesh_node_build(&n1, &p, MESH_TYPE_DATA, 2, 3, NULL, 0) == MESH_OK);
+        CHECK(mesh_node_handle_rx(&n2, &p, &fwd, NULL) == MESH_ACTION_DELIVER);
+    }
+
+    mesh_node_init(&n1, 1, 0);  /* reboot, counter starts from 0 again */
+    CHECK(mesh_node_build(&n1, &p, MESH_TYPE_DATA, 2, 3, NULL, 0) == MESH_OK);
+    CHECK(mesh_node_handle_rx(&n2, &p, &fwd, &why) == MESH_ACTION_DROP);
+    CHECK(why == MESH_DROP_DUPLICATE);  /* a new message is lost */
+}
+
+static void test_reboot_new_start_id_is_delivered(void)
+{
+    mesh_node_t n1, n2;
+    mesh_packet_t p, fwd;
+    mesh_node_init(&n1, 1, 0);
+    mesh_node_init(&n2, 2, 0);
+    for (int i = 0; i < 5; i++) {
+        CHECK(mesh_node_build(&n1, &p, MESH_TYPE_DATA, 2, 3, NULL, 0) == MESH_OK);
+        CHECK(mesh_node_handle_rx(&n2, &p, &fwd, NULL) == MESH_ACTION_DELIVER);
+    }
+
+    mesh_node_init(&n1, 1, 0xA5C3);  /* reboot with a random start */
+    CHECK(mesh_node_build(&n1, &p, MESH_TYPE_DATA, 2, 3, NULL, 0) == MESH_OK);
+    CHECK(mesh_node_handle_rx(&n2, &p, &fwd, NULL) == MESH_ACTION_DELIVER);
 }
 
 /* ---------------- backoff ---------------- */
@@ -278,7 +333,7 @@ static void test_line_of_four_nodes(void)
     enum { N = 4 };
     mesh_node_t nodes[N];
     for (int i = 0; i < N; i++) {
-        mesh_node_init(&nodes[i], (uint16_t)(i + 1));
+        mesh_node_init(&nodes[i], (uint16_t)(i + 1), 0);
     }
 
     /* queue of (receiver index, packet) to process, simple breadth-first */
@@ -322,10 +377,10 @@ static void test_line_ttl_too_small(void)
     mesh_node_t n2, n3, n4;
     mesh_node_t n1;
     mesh_packet_t p, f2, f3;
-    mesh_node_init(&n1, 1);
-    mesh_node_init(&n2, 2);
-    mesh_node_init(&n3, 3);
-    mesh_node_init(&n4, 4);
+    mesh_node_init(&n1, 1, 0);
+    mesh_node_init(&n2, 2, 0);
+    mesh_node_init(&n3, 3, 0);
+    mesh_node_init(&n4, 4, 0);
 
     CHECK(mesh_node_build(&n1, &p, MESH_TYPE_DATA, 4, 2, NULL, 0) == MESH_OK);
     CHECK(mesh_node_handle_rx(&n2, &p, &f2, NULL) == MESH_ACTION_FORWARD);  /* ttl 2 -> 1 */
@@ -352,6 +407,11 @@ int main(void)
     test_build_fills_fields_and_increments_id();
     test_build_msg_id_wraps();
     test_build_rejects_bad_arguments();
+    test_build_starts_from_first_msg_id();
+    test_build_rejects_unknown_type();
+
+    test_reboot_same_start_id_is_dropped();
+    test_reboot_new_start_id_is_delivered();
 
     test_backoff_stays_in_range();
     test_backoff_covers_both_ends();

@@ -28,7 +28,13 @@ typedef struct {
     mesh_dedup_t seen;         /* recently seen messages */
 } mesh_node_t;
 
-void mesh_node_init(mesh_node_t *node, uint16_t addr);
+/* Initializes a node.
+ * first_msg_id is the number of the first message this node will create.
+ * On real hardware pass a random value at every boot (for example from
+ * ADC noise or a hardware RNG). If every boot started from 0, neighbors
+ * that still remember the node's previous messages (src, 0..N) would drop
+ * its new messages as duplicates after a reboot. Tests may pass 0. */
+void mesh_node_init(mesh_node_t *node, uint16_t addr, uint16_t first_msg_id);
 
 /* Builds a new packet originating at this node and records it as seen,
  * so the node will not forward its own packet when it hears it again.

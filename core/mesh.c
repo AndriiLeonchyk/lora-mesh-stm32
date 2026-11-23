@@ -3,13 +3,13 @@
 #include <stddef.h>
 #include <string.h>
 
-void mesh_node_init(mesh_node_t *node, uint16_t addr)
+void mesh_node_init(mesh_node_t *node, uint16_t addr, uint16_t first_msg_id)
 {
     if (node == NULL) {
         return;
     }
     node->addr = addr;
-    node->next_msg_id = 0;
+    node->next_msg_id = first_msg_id;
     mesh_dedup_init(&node->seen);
 }
 
@@ -22,6 +22,9 @@ int mesh_node_build(mesh_node_t *node, mesh_packet_t *pkt, uint8_t type,
     }
     if (len > MESH_MAX_PAYLOAD) {
         return MESH_ERR_TOO_LONG;
+    }
+    if (!mesh_type_is_known(type)) {
+        return MESH_ERR_TYPE;
     }
 
     memset(pkt, 0, sizeof(*pkt));
