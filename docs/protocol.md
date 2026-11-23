@@ -34,8 +34,11 @@ The random backoff reduces collisions when several nodes receive the same frame 
 
 - A node also drops a frame whose `src` is its own address (its own message echoed back by a neighbor). Packets created with `mesh_node_build()` are added to the seen-cache at once.
 - A frame with `ttl` = 0 is treated as invalid and dropped.
+- A frame with an unknown `type` is rejected by the parser (`MESH_ERR_TYPE`) and cannot be serialized. Frame types are fixed per protocol version: adding a type requires a new `version`.
+- The first `msg_id` after boot is passed to `mesh_node_init()`. On hardware it must be random: if every boot started from 0, neighbors that still remember the node's previous messages would drop its new ones as duplicates. A random 16-bit start makes such a collision unlikely (32 cached ids out of 65536) but not impossible; a persistent boot counter would remove it completely.
 - A frame addressed to this node is delivered and never forwarded.
 - The seen-cache holds the last 32 (`src`, `msg_id`) pairs (`MESH_DEDUP_SIZE`, 128 bytes of RAM). When full, the oldest entry is overwritten.
+- Known limitation: the cache has no time-based expiry. In a busy network an entry can be evicted before the last copy of that message arrives, and the node then forwards it a second time. TTL still bounds this. The cache size has to be chosen for the expected traffic (to be measured on hardware).
 - `mesh_node_handle_rx()` returns flags: `DELIVER`, `FORWARD`, both (broadcast), or none (drop, with a reason: invalid, own, duplicate, ttl expired). It does not touch the radio; the caller serializes the forwarded copy (which recomputes the CRC) and sends it after `mesh_backoff_ms()`.
 - `mesh_backoff_ms()` takes the random number as an argument, so the same code runs on the STM32 (hardware randomness) and in PC tests.
 
@@ -53,5 +56,6 @@ Each node periodically broadcasts a HELLO frame with `ttl` = 1 (not forwarded). 
 ## Open questions
 
 - Retransmission and ACK strategy for unicast messages
-- Seen-cache size and expiry
+- Seen-cache size for the real traffic level
+- Persistent boot counter instead of a random first `msg_id`
 - Duty-cycle limits at 868 MHz

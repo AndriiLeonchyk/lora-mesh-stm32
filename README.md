@@ -1,6 +1,8 @@
 # lora-mesh-stm32
 
-Experimental LoRa mesh network with AES encryption on STM32 (C).
+[![tests](https://github.com/AndriiLeonchyk/lora-mesh-stm32/actions/workflows/tests.yml/badge.svg)](https://github.com/AndriiLeonchyk/lora-mesh-stm32/actions/workflows/tests.yml)
+
+Experimental LoRa mesh network on STM32 (C), with AES encryption planned.
 
 ## Status
 Work in progress (started November 2026). 
@@ -74,6 +76,7 @@ Requires `gcc` on PATH (for example MSYS2 UCRT64). From the repository root:
 ```
 .\tests\run_tests.ps1
 ```
+On Linux or macOS: `sh tests/run_tests.sh`. The same tests run automatically on GitHub for every push (GitHub Actions).
 
 ### STM32 firmware
 Open `platform/stm32/blink` in VS Code with the STM32Cube extension and run **Build**.
@@ -97,9 +100,9 @@ Example for a 20-byte frame, BW 125 kHz, CR 4/5, 1 % duty cycle:
 Host unit tests, run on a PC:
 - `tests/test_packet.c`: packet round trip, CRC error, version, length and argument checks
 - `tests/test_crc16.c`: CRC-16/CCITT-FALSE check values, every single-bit error detected, residue property
-- `tests/test_packet_edge.c`: empty payload, all frame types, wire layout, field extremes, any bit flip in a frame rejected, length and size boundaries
+- `tests/test_packet_edge.c`: empty payload, all frame types, unknown types rejected, wire layout, field extremes, any bit flip in a frame rejected, length and size boundaries
 - `tests/test_sx1276_regs.c`: SX1276 register map constants (868 MHz frequency word, SPI read/write bit, operating modes, IRQ flags)
-- `tests/test_mesh.c`: deduplication cache (including eviction), deliver/forward/drop decisions, own-packet echo, packet building and `msg_id` wrap-around, backoff range, a 4-node multi-hop line scenario
+- `tests/test_mesh.c`: deduplication cache (including eviction), deliver/forward/drop decisions, own-packet echo, packet building and `msg_id` wrap-around, reboot with the same vs a new first `msg_id`, backoff range, a 4-node multi-hop line scenario
 
 All five suites pass. The firmware has not been tested on hardware yet.
 
