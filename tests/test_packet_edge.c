@@ -167,6 +167,33 @@ static void test_frame_over_limit(void)
     CHECK(mesh_packet_parse(buf, sizeof(buf), &out) == MESH_ERR_TOO_LONG);
 }
 
+/* A frame with a valid CRC but an unknown type is rejected. */
+static void test_unknown_type_rejected(void)
+{
+    mesh_packet_t in = make_packet(MESH_TYPE_DATA, 3);
+    mesh_packet_t out;
+    uint8_t buf[MESH_MAX_FRAME_SIZE];
+    int n = mesh_packet_serialize(&in, buf, sizeof(buf));
+    const uint8_t bad_types[] = { 0x00, 0x04, 0x7F, 0xFF };
+    for (size_t i = 0; i < sizeof(bad_types); i++) {
+        buf[1] = bad_types[i];
+        fix_crc(buf, n);
+        CHECK(mesh_packet_parse(buf, (size_t)n, &out) == MESH_ERR_TYPE);
+    }
+}
+
+/* An unknown type cannot be serialized either. */
+static void test_serialize_unknown_type_rejected(void)
+{
+    mesh_packet_t in = make_packet(0x09, 1);
+    uint8_t buf[MESH_MAX_FRAME_SIZE];
+    CHECK(mesh_packet_serialize(&in, buf, sizeof(buf)) == MESH_ERR_TYPE);
+    CHECK(!mesh_type_is_known(0x09));
+    CHECK(mesh_type_is_known(MESH_TYPE_DATA));
+    CHECK(mesh_type_is_known(MESH_TYPE_ACK));
+    CHECK(mesh_type_is_known(MESH_TYPE_HELLO));
+}
+
 /* The len field claiming more payload than the frame carries is rejected. */
 static void test_length_field_too_big(void)
 {
@@ -234,6 +261,8 @@ int main(void)
     test_truncated_frame();
     test_minimum_length_boundary();
     test_frame_over_limit();
+    test_unknown_type_rejected();
+    test_serialize_unknown_type_rejected();
     test_length_field_too_big();
     test_length_field_too_small();
     test_version_zero_rejected();

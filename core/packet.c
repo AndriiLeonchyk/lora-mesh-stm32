@@ -14,6 +14,11 @@ static uint16_t get_u16_le(const uint8_t *p)
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
 
+bool mesh_type_is_known(uint8_t type)
+{
+    return type == MESH_TYPE_DATA || type == MESH_TYPE_ACK || type == MESH_TYPE_HELLO;
+}
+
 int mesh_packet_serialize(const mesh_packet_t *pkt, uint8_t *buf, size_t buf_size)
 {
     if (pkt == NULL || buf == NULL) {
@@ -21,6 +26,9 @@ int mesh_packet_serialize(const mesh_packet_t *pkt, uint8_t *buf, size_t buf_siz
     }
     if (pkt->len > MESH_MAX_PAYLOAD) {
         return MESH_ERR_TOO_LONG;
+    }
+    if (!mesh_type_is_known(pkt->type)) {
+        return MESH_ERR_TYPE;
     }
 
     size_t total = (size_t)MESH_HEADER_SIZE + pkt->len + MESH_CRC_SIZE;
@@ -66,6 +74,10 @@ int mesh_packet_parse(const uint8_t *buf, size_t len, mesh_packet_t *pkt)
 
     if (buf[0] != MESH_PROTOCOL_VERSION) {
         return MESH_ERR_VERSION;
+    }
+    /* Frame types are fixed per protocol version; a new type means a new version. */
+    if (!mesh_type_is_known(buf[1])) {
+        return MESH_ERR_TYPE;
     }
     if ((size_t)buf[9] != body - MESH_HEADER_SIZE) {
         return MESH_ERR_LENGTH;

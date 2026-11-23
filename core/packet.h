@@ -1,6 +1,7 @@
 #ifndef MESH_PACKET_H
 #define MESH_PACKET_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -25,7 +26,8 @@ typedef enum {
     MESH_ERR_TOO_LONG  = -3,  /* payload does not fit */
     MESH_ERR_VERSION   = -4,  /* unsupported protocol version */
     MESH_ERR_LENGTH    = -5,  /* len field does not match frame size */
-    MESH_ERR_CRC       = -6   /* checksum mismatch */
+    MESH_ERR_CRC       = -6,  /* checksum mismatch */
+    MESH_ERR_TYPE      = -7   /* unknown frame type */
 } mesh_status_t;
 
 /* In-memory representation. Serialization is done field by field,
@@ -40,6 +42,9 @@ typedef struct {
     uint8_t  len;
     uint8_t  payload[MESH_MAX_PAYLOAD];
 } mesh_packet_t;
+
+/* Returns true for the frame types defined by this protocol version. */
+bool mesh_type_is_known(uint8_t type);
 
 /* Writes the packet (header + payload + CRC) into buf.
  * Returns the number of bytes written, or a negative mesh_status_t. */
