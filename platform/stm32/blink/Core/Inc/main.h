@@ -59,6 +59,13 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define LED_Pin GPIO_PIN_13
 #define LED_GPIO_Port GPIOC
+#define RADIO_NSS_Pin GPIO_PIN_4
+#define RADIO_NSS_GPIO_Port GPIOA
+#define RADIO_RESET_Pin GPIO_PIN_0
+#define RADIO_RESET_GPIO_Port GPIOB
+#define RADIO_DIO0_Pin GPIO_PIN_1
+#define RADIO_DIO0_GPIO_Port GPIOB
+#define RADIO_DIO0_EXTI_IRQn EXTI1_IRQn
 
 /* USER CODE BEGIN Private defines */
 
