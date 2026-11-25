@@ -14,8 +14,9 @@ Currently done:
 - SX1276 register map (`radio/sx1276_regs.h`)
 - LoRa time-on-air calculator (`tools/lora_airtime.py`)
 - Host unit tests for all of the above
+- Board bring-up: 72 MHz clock from the 8 MHz crystal, SPI1, USART1 and radio pins configured in STM32CubeMX; the firmware runs on both Blue Pill boards
 Planned: 
-- Hardware has been ordered; firmware development starts when it arrives
+- SX1276 SPI driver and the first radio test on real hardware
 - Mesh logic developed and tested in simulation first (Python / C on PC)
 
 ## Features (planned)
@@ -46,6 +47,9 @@ docs/              protocol, hardware and requirements
 - ST-Link V2 programmer (SWD)
 - 2 × HopeRF RFM95W-868 (SX1276) LoRa modules, 868 MHz
 - Antennas for 868 MHz
+- Planned for the receiver node: 1602 LCD with an I2C (PCF8574) backpack and an RGB LED
+
+Pinout and wiring: [`docs/hardware.md`](docs/hardware.md).
 
 ## Packet format
 Every frame has a 10-byte header, a payload and a CRC16. Multi-byte fields are little-endian.
@@ -104,12 +108,13 @@ Host unit tests, run on a PC:
 - `tests/test_sx1276_regs.c`: SX1276 register map constants (868 MHz frequency word, SPI read/write bit, operating modes, IRQ flags)
 - `tests/test_mesh.c`: deduplication cache (including eviction), deliver/forward/drop decisions, own-packet echo, packet building and `msg_id` wrap-around, reboot with the same vs a new first `msg_id`, backoff range, a 4-node multi-hop line scenario
 
-All five suites pass. The firmware has not been tested on hardware yet.
+All five suites pass. On hardware, the board bring-up firmware runs on both boards; the radio driver is not written yet.
 
 ## Roadmap
 - [x] Packet format with CRC16
 - [x] Mesh core: deduplication, TTL flooding, random backoff
 - [x] SX1276 register map
+- [x] Board bring-up: 72 MHz HSE clock, SPI1, USART1 and radio pins configured, firmware runs on both boards
 - [ ] Radio abstraction and multi-node network simulator on a PC
 - [ ] SX1276 SPI driver, first test: read `RegVersion` = `0x12`
 - [ ] Two-node LoRa link on real hardware, range and RSSI measurements
@@ -118,7 +123,7 @@ All five suites pass. The firmware has not been tested on hardware yet.
 
 ## Limitations
 - Early-stage educational project, not production-ready
-- Until the hardware is in place, mesh logic is verified only in simulation, not over real radio
+- Mesh logic is verified only in host tests so far, not over real radio
 - Real-world range and reliability have not been measured yet
 - Encryption design is not security-audited
 
