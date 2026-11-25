@@ -12,11 +12,12 @@ Currently done:
 - Packet serialization with CRC16 (`core/packet.c`)
 - Mesh core: message deduplication, flooding forward decisions with TTL, random backoff (`core/dedup.c`, `core/mesh.c`)
 - SX1276 register map (`radio/sx1276_regs.h`)
+- SX1276 driver: SPI register access, reset, `RegVersion` check, LoRa set-up (frequency, power, SF) behind a platform interface (`radio/sx1276.c`), STM32 port in `platform/stm32/port`
 - LoRa time-on-air calculator (`tools/lora_airtime.py`)
 - Host unit tests for all of the above
 - Board bring-up: 72 MHz clock from the 8 MHz crystal, SPI1, USART1 and radio pins configured in STM32CubeMX; the firmware runs on both Blue Pill boards
 Planned: 
-- SX1276 SPI driver and the first radio test on real hardware
+- First radio test on real hardware (`RegVersion` = `0x12`), then LoRa TX/RX
 - Mesh logic developed and tested in simulation first (Python / C on PC)
 
 ## Features (planned)
@@ -35,8 +36,12 @@ core/              mesh logic in portable C, no hardware dependency
   crc16.c/.h       CRC-16/CCITT-FALSE
   dedup.c/.h       cache of recently seen messages
   mesh.c/.h        deliver / forward / drop decisions, backoff
-radio/             SX1276 (RFM95W) driver, register map so far
-platform/stm32/    STM32CubeMX project for the Blue Pill
+radio/             SX1276 (RFM95W) driver, no MCU dependency
+  sx1276_regs.h    register map
+  sx1276.c/.h      register access, reset, LoRa configuration
+platform/stm32/
+  blink/           STM32CubeMX project for the Blue Pill
+  port/            SX1276 platform functions on STM32 HAL (SPI1, PA4, PB0)
 tests/             host unit tests (run on a PC)
 tools/             Python helper tools
 docs/              protocol, hardware and requirements
@@ -106,9 +111,10 @@ Host unit tests, run on a PC:
 - `tests/test_crc16.c`: CRC-16/CCITT-FALSE check values, every single-bit error detected, residue property
 - `tests/test_packet_edge.c`: empty payload, all frame types, unknown types rejected, wire layout, field extremes, any bit flip in a frame rejected, length and size boundaries
 - `tests/test_sx1276_regs.c`: SX1276 register map constants (868 MHz frequency word, SPI read/write bit, operating modes, IRQ flags)
+- `tests/test_sx1276.c`: SX1276 driver against a simulated chip (registers, FIFO, reset, sleep-only LoRa switch): SPI read/write bit, burst and FIFO access, reset and `RegVersion` check, missing chip detected, full LoRa configuration at SF7 and SF12, argument checks, NSS released after an SPI error
 - `tests/test_mesh.c`: deduplication cache (including eviction), deliver/forward/drop decisions, own-packet echo, packet building and `msg_id` wrap-around, reboot with the same vs a new first `msg_id`, backoff range, a 4-node multi-hop line scenario
 
-All five suites pass. On hardware, the board bring-up firmware runs on both boards; the radio driver is not written yet.
+All six suites pass. On hardware, the board bring-up firmware runs on both boards; the radio driver has not been tested with a real module yet.
 
 ## Roadmap
 - [x] Packet format with CRC16
@@ -116,7 +122,9 @@ All five suites pass. On hardware, the board bring-up firmware runs on both boar
 - [x] SX1276 register map
 - [x] Board bring-up: 72 MHz HSE clock, SPI1, USART1 and radio pins configured, firmware runs on both boards
 - [ ] Radio abstraction and multi-node network simulator on a PC
-- [ ] SX1276 SPI driver, first test: read `RegVersion` = `0x12`
+- [x] SX1276 SPI driver with host tests against a simulated chip
+- [ ] First hardware test: read `RegVersion` = `0x12`
+- [ ] LoRa TX/RX with the DIO0 interrupt
 - [ ] Two-node LoRa link on real hardware, range and RSSI measurements
 - [ ] HELLO frames and neighbor table
 - [ ] AES-CCM encryption with replay protection
@@ -128,4 +136,4 @@ All five suites pass. On hardware, the board bring-up firmware runs on both boar
 - Encryption design is not security-audited
 
 ## License
-MIT
+MIT

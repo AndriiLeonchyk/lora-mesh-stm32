@@ -64,6 +64,30 @@
 #define SX1276_DIO0_TX_DONE         0x40u
 #define SX1276_DIO0_CAD_DONE        0x80u
 
+/* ---- RegPaConfig (0x09) ---- */
+#define SX1276_PA_BOOST             0x80u  /* bit 7: output on PA_BOOST (used by RFM95W) */
+#define SX1276_PA_MAX_POWER         0x70u  /* bits 6..4: MaxPower = 7 */
+#define SX1276_PA_OUTPUT_MASK       0x0Fu  /* bits 3..0: Pout = 2 + OutputPower dBm (PA_BOOST) */
+
+/* ---- RegLna (0x0C) ---- */
+#define SX1276_LNA_MAX_GAIN_BOOST   0x23u  /* G1 (max gain) + LNA boost for the HF band */
+
+/* ---- RegModemConfig1 (0x1D) ---- */
+#define SX1276_BW_125KHZ            0x70u  /* bits 7..4 */
+#define SX1276_CR_4_5               0x02u  /* bits 3..1 */
+#define SX1276_IMPLICIT_HEADER      0x01u  /* bit 0 */
+
+/* ---- RegModemConfig2 (0x1E) ---- */
+#define SX1276_SF_SHIFT             4u     /* bits 7..4: spreading factor */
+#define SX1276_RX_PAYLOAD_CRC_ON    0x04u  /* bit 2 */
+
+/* ---- RegModemConfig3 (0x26) ---- */
+#define SX1276_LOW_DATA_RATE_OPT    0x08u  /* bit 3: required when a symbol > 16 ms */
+#define SX1276_AGC_AUTO_ON          0x04u  /* bit 2 */
+
+/* ---- RegSyncWord (0x39) ---- */
+#define SX1276_SYNC_WORD_PRIVATE    0x12u  /* private networks (0x34 is LoRaWAN) */
+
 /* ---- Constants ---- */
 #define SX1276_VERSION_EXPECTED     0x12u   /* RegVersion of a working SX1276 */
 #define SX1276_FIFO_SIZE            256u

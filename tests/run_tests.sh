@@ -6,8 +6,8 @@ cd "$(dirname "$0")/.." || exit 1
 
 CC=${CC:-gcc}
 CFLAGS="-std=c11 -Wall -Wextra -Werror -Icore -Iradio"
-CORE="core/crc16.c core/packet.c core/dedup.c core/mesh.c"
-TESTS="test_packet test_crc16 test_packet_edge test_mesh test_sx1276_regs"
+CORE="core/crc16.c core/packet.c core/dedup.c core/mesh.c radio/sx1276.c"
+TESTS="test_packet test_crc16 test_packet_edge test_mesh test_sx1276_regs test_sx1276"
 OUT=${TMPDIR:-/tmp}/lora-mesh-tests
 mkdir -p "$OUT"
 
