@@ -21,6 +21,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
+#include <string.h>
+
+#include "sx1276.h"
+#include "sx1276_port.h"
 
 /* USER CODE END Includes */
 
@@ -45,6 +50,8 @@ SPI_HandleTypeDef hspi1;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
+static sx1276_t radio;
+static int radio_status = SX1276_ERR_ARGS;
 
 /* USER CODE END PV */
 
@@ -59,6 +66,11 @@ static void MX_USART1_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/* Sends a text line to USART1 (PA9, 115200 8N1) for a USB-UART adapter. */
+static void log_line(const char *text)
+{
+  HAL_UART_Transmit(&huart1, (uint8_t *)text, (uint16_t)strlen(text), 100);
+}
 
 /* USER CODE END 0 */
 
@@ -94,6 +106,15 @@ int main(void)
   MX_SPI1_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+  /* First radio test: reset the SX1276, check RegVersion == 0x12 and
+   * configure LoRa (868 MHz, SF7, 10 dBm). */
+  sx1276_config_t radio_cfg = sx1276_default_config();
+  radio_status = sx1276_init(&radio, sx1276_port_hal(), &radio_cfg);
+
+  char msg[64];
+  snprintf(msg, sizeof(msg), "SX1276 init: status %d, RegVersion 0x%02X\r\n",
+           radio_status, (unsigned)radio.version);
+  log_line(msg);
 
   /* USER CODE END 2 */
 
@@ -104,8 +125,15 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-  HAL_Delay(500);
+    if (radio_status == SX1276_OK) {
+      /* Radio found: fast blink. */
+      HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+      HAL_Delay(100);
+    } else {
+      /* No radio or bad wiring: LED stays on (PC13 is active low). */
+      HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+      HAL_Delay(1000);
+    }
   }
   /* USER CODE END 3 */
 }
