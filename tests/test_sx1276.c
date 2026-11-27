@@ -218,6 +218,7 @@ static sx1276_hal_t mock_hal(mock_chip_t *m)
 static void test_frf_calculation(void)
 {
     CHECK(sx1276_frf_from_hz(868000000u) == SX1276_FRF_868MHZ);  /* 0xD90000 */
+    CHECK(sx1276_frf_from_hz(868100000u) == 0xD90666u);  /* default channel */
     CHECK(sx1276_frf_from_hz(915000000u) == 0xE4C000u);
     CHECK(sx1276_frf_from_hz(433000000u) == 0x6C4000u);
     /* One step is about 61 Hz. */
@@ -325,10 +326,10 @@ static void test_init_configures_lora(void)
     CHECK(sx1276_init(&dev, &hal, &cfg) == SX1276_OK);
     /* LoRa mode, HF band (LowFrequencyModeOn = 0), standby. */
     CHECK(m.regs[SX1276_REG_OP_MODE] == (SX1276_MODE_LONG_RANGE | SX1276_MODE_STDBY));
-    /* 868 MHz */
+    /* 868.1 MHz = 0xD90666 */
     CHECK(m.regs[SX1276_REG_FRF_MSB] == 0xD9);
-    CHECK(m.regs[SX1276_REG_FRF_MID] == 0x00);
-    CHECK(m.regs[SX1276_REG_FRF_LSB] == 0x00);
+    CHECK(m.regs[SX1276_REG_FRF_MID] == 0x06);
+    CHECK(m.regs[SX1276_REG_FRF_LSB] == 0x66);
     /* PA_BOOST, 10 dBm = 2 + 8 */
     CHECK(m.regs[SX1276_REG_PA_CONFIG] == 0xF8);
     CHECK(m.regs[SX1276_REG_LNA] == 0x23);

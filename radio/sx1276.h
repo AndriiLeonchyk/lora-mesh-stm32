@@ -56,7 +56,7 @@ typedef struct {
 /* Radio settings. Bandwidth (125 kHz) and coding rate (4/5) are fixed
  * for now; payload CRC is always on, header mode is explicit. */
 typedef struct {
-    uint32_t frequency_hz;      /* carrier, 137 MHz .. 1020 MHz, e.g. 868000000 */
+    uint32_t frequency_hz;      /* carrier, 137 MHz .. 1020 MHz, e.g. 868100000 */
     uint8_t  spreading_factor;  /* 7 .. 12 */
     uint8_t  tx_power_dbm;      /* 2 .. 17 dBm on PA_BOOST */
     uint16_t preamble_len;      /* preamble length in symbols, usually 8 */
@@ -69,7 +69,7 @@ typedef struct {
     uint8_t version;            /* RegVersion read by sx1276_probe() */
 } sx1276_t;
 
-/* Default settings: 868 MHz, SF7, 10 dBm (low power for bench tests),
+/* Default settings: 868.1 MHz, SF7, 10 dBm (low power for bench tests),
  * 8-symbol preamble, private sync word. */
 sx1276_config_t sx1276_default_config(void);
 

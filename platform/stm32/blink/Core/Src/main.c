@@ -36,10 +36,13 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* Radio link test. Flash one board with 1 (sends "ping N" every 2 s)
+/* Radio link test. Flash one board with 1 (sends "ping N" every 5 s)
  * and the other with 0 (listens and logs every packet). */
 #define RADIO_ROLE_TX      1
-#define PING_PERIOD_MS     2000u
+/* A ping takes about 40 ms on air (SF7, BW 125 kHz). Every 5 s that is
+ * 0.8 % of the time, under the 1 % duty-cycle limit of the 868.0-868.6 MHz
+ * sub-band. Every 2 s it would be 2 %, which is not allowed. */
+#define PING_PERIOD_MS     5000u
 #define TX_TIMEOUT_MS      1000u   /* SF7, 20 bytes takes about 60 ms */
 
 /* USER CODE END PD */
@@ -194,7 +197,7 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   /* Reset the SX1276, check RegVersion == 0x12 and configure LoRa
-   * (868 MHz, SF7, 10 dBm). */
+   * (868.1 MHz, SF7, 10 dBm). */
   sx1276_config_t radio_cfg = sx1276_default_config();
   radio_status = sx1276_init(&radio, sx1276_port_hal(), &radio_cfg);
 

@@ -1,6 +1,8 @@
 # Mesh protocol (draft v1)
 
-Status: frame format, deduplication and forwarding decisions are implemented and unit-tested on a PC (`core/`). Radio, HELLO handling and encryption are not implemented yet.
+Status: frame format, deduplication and forwarding decisions are implemented and unit-tested on a PC (`core/`). The SX1276 radio driver (`radio/`) can send and receive raw LoRa packets and has been tested on hardware; the mesh logic is not yet connected to it. HELLO handling and encryption are not implemented yet.
+
+Radio settings: 868.1 MHz, SF7, BW 125 kHz, CR 4/5, 8-symbol preamble, explicit header, hardware payload CRC, private sync word 0x12.
 
 ## Frame format
 

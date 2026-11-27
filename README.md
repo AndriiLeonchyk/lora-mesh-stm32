@@ -13,7 +13,7 @@ Currently done:
 - Mesh core: message deduplication, flooding forward decisions with TTL, random backoff (`core/dedup.c`, `core/mesh.c`)
 - SX1276 register map (`radio/sx1276_regs.h`)
 - SX1276 driver: SPI register access, reset, `RegVersion` check, LoRa set-up (frequency, power, SF), non-blocking transmit and continuous receive with the DIO0 interrupt, packet RSSI/SNR, behind a platform interface (`radio/sx1276.c`); STM32 port in `platform/stm32/port`
-- Radio link test firmware: one board sends `ping N` every 2 s, the other receives and logs RSSI/SNR over UART
+- Radio link test firmware: one board sends `ping N` every 5 s (0.8 % duty cycle at 868.1 MHz), the other receives and logs RSSI/SNR over UART
 - LoRa time-on-air calculator (`tools/lora_airtime.py`)
 - Host unit tests for all of the above
 - Board bring-up: 72 MHz clock from the 8 MHz crystal, SPI1, USART1 and radio pins configured in STM32CubeMX; the firmware runs on both Blue Pill boards
@@ -101,7 +101,7 @@ On-board LED (PC13):
 | LED | Meaning |
 |---|---|
 | 3 quick flashes at start | radio found and configured |
-| toggles on every packet | transmitter: packet sent; receiver: packet received |
+| toggles on every packet | transmitter: packet sent (every 5 s); receiver: packet received |
 | 2 flashes, pause | `RegVersion` read as `0x00`: no power, or NSS/SCK/MISO not connected |
 | 3 flashes, pause | `RegVersion` read as `0xFF`: MISO floating or chip held in reset |
 | 4 flashes, pause | other start-up error (unstable contact, SPI error) |
@@ -130,7 +130,7 @@ Host unit tests, run on a PC:
 - `tests/test_sx1276.c`: SX1276 driver against a simulated chip (registers, FIFO, reset, sleep-only LoRa switch): SPI read/write bit, burst and FIFO access, reset and `RegVersion` check, missing chip detected, full LoRa configuration at SF7 and SF12, argument checks, NSS released after an SPI error; transmit (FIFO, payload length, TxDone on DIO0), continuous receive (packet position from `RegFifoRxCurrentAddr`, CRC error, buffer too small), RSSI/SNR formula, and an end-to-end exchange between two simulated radios
 - `tests/test_mesh.c`: deduplication cache (including eviction), deliver/forward/drop decisions, own-packet echo, packet building and `msg_id` wrap-around, reboot with the same vs a new first `msg_id`, backoff range, a 4-node multi-hop line scenario
 
-All six suites pass. On hardware, the driver finds the module (`RegVersion` = `0x12`) on the first node; the two-node radio link has not been tested yet.
+All six suites pass. On hardware, the first node finds the module (`RegVersion` = `0x12`) and transmits pings (TxDone received on DIO0); the two-node radio link has not been tested yet. Bring-up problems and fixes are logged in [`docs/hardware.md`](docs/hardware.md).
 
 ## Roadmap
 - [x] Packet format with CRC16
@@ -153,4 +153,4 @@ All six suites pass. On hardware, the driver finds the module (`RegVersion` = `0
 - Encryption design is not security-audited
 
 ## License
-MIT
+MIT

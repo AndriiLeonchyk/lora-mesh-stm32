@@ -81,5 +81,12 @@ int sx1276_port_dio0_pending(void)
     int pending = dio0_flag;
     dio0_flag = 0;
     __enable_irq();
+
+    /* The EXTI fires only on a rising edge. If an edge was ever missed,
+     * DIO0 would stay high and no new edge would come: the radio would go
+     * silent. Checking the pin level as well recovers from that. */
+    if (HAL_GPIO_ReadPin(RADIO_DIO0_GPIO_Port, RADIO_DIO0_Pin) == GPIO_PIN_SET) {
+        pending = 1;
+    }
     return pending;
 }

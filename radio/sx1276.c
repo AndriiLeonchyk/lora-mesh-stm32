@@ -8,7 +8,7 @@
 sx1276_config_t sx1276_default_config(void)
 {
     sx1276_config_t cfg;
-    cfg.frequency_hz     = 868000000u;
+    cfg.frequency_hz     = 868100000u;   /* 868.1 MHz: inside the 868.0-868.6 MHz sub-band */
     cfg.spreading_factor = 7;
     cfg.tx_power_dbm     = 10;
     cfg.preamble_len     = 8;
