@@ -64,3 +64,22 @@ const sx1276_hal_t *sx1276_port_hal(void)
 {
     return &port_hal;
 }
+
+/* Set in interrupt context, read in the main loop: must be volatile. */
+static volatile uint8_t dio0_flag;
+
+void sx1276_port_dio0_isr(void)
+{
+    dio0_flag = 1;
+}
+
+int sx1276_port_dio0_pending(void)
+{
+    /* Read and clear with interrupts off, so an interrupt that comes
+     * between the two steps is not lost. */
+    __disable_irq();
+    int pending = dio0_flag;
+    dio0_flag = 0;
+    __enable_irq();
+    return pending;
+}

@@ -36,6 +36,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+/* Radio link test. Flash one board with 1 (sends "ping N" every 2 s)
+ * and the other with 0 (listens and logs every packet). */
+#define RADIO_ROLE_TX      1
+#define PING_PERIOD_MS     2000u
+#define TX_TIMEOUT_MS      1000u   /* SF7, 20 bytes takes about 60 ms */
 
 /* USER CODE END PD */
 
@@ -52,6 +57,12 @@ UART_HandleTypeDef huart1;
 /* USER CODE BEGIN PV */
 static sx1276_t radio;
 static int radio_status = SX1276_ERR_ARGS;
+static uint8_t  tx_busy;           /* waiting for TxDone */
+static uint32_t tx_started_ms;
+#if RADIO_ROLE_TX
+static uint32_t last_ping_ms;
+static uint32_t ping_counter;
+#endif
 
 /* USER CODE END PV */
 
@@ -70,6 +81,82 @@ static void MX_USART1_UART_Init(void);
 static void log_line(const char *text)
 {
   HAL_UART_Transmit(&huart1, (uint8_t *)text, (uint16_t)strlen(text), 100);
+}
+
+/* PC13 LED is active low. */
+static void led(int on)
+{
+  HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, on ? GPIO_PIN_RESET : GPIO_PIN_SET);
+}
+
+static void led_flashes(unsigned count, uint32_t on_ms, uint32_t off_ms)
+{
+  for (unsigned i = 0; i < count; i++) {
+    led(1);
+    HAL_Delay(on_ms);
+    led(0);
+    HAL_Delay(off_ms);
+  }
+}
+
+/* Radio did not start. The number of flashes tells what was read from
+ * RegVersion, so wiring problems can be found without a UART adapter:
+ *   2 flashes: 0x00  (no power, MISO stuck low, NSS/SCK not reaching the chip)
+ *   3 flashes: 0xFF  (MISO not connected / floating, chip held in reset)
+ *   4 flashes: version read but other error (unstable contact, SPI error) */
+static void show_radio_error(void)
+{
+  unsigned flashes = 4;
+  if (radio_status == SX1276_ERR_VERSION && radio.version == 0x00) {
+    flashes = 2;
+  } else if (radio_status == SX1276_ERR_VERSION && radio.version == 0xFF) {
+    flashes = 3;
+  }
+  led_flashes(flashes, 200, 300);
+  HAL_Delay(1500);
+}
+
+/* Reads one radio event (after DIO0) and logs it. */
+static void handle_radio_event(void)
+{
+  /* static: the stack is only 1 KB (CubeMX default), keep big buffers off it. */
+  static char line[128];
+  static uint8_t data[255];
+  sx1276_event_t ev = SX1276_EVENT_NONE;
+
+  if (sx1276_handle_dio0(&radio, &ev) != SX1276_OK) {
+    log_line("DIO0: SPI error\r\n");
+    return;
+  }
+
+  switch (ev) {
+  case SX1276_EVENT_TX_DONE:
+    tx_busy = 0;
+    HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+    snprintf(line, sizeof(line), "TX done in %lu ms\r\n",
+             (unsigned long)(HAL_GetTick() - tx_started_ms));
+    log_line(line);
+    break;
+
+  case SX1276_EVENT_RX_DONE: {
+    sx1276_rx_info_t info;
+    if (sx1276_read_packet(&radio, data, sizeof(data), &info) == SX1276_OK) {
+      HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+      snprintf(line, sizeof(line), "RX %u B, RSSI %d dBm, SNR %d dB: %.*s\r\n",
+               (unsigned)info.len, (int)info.rssi_dbm, (int)info.snr_db,
+               (int)info.len, (const char *)data);
+      log_line(line);
+    }
+    break;
+  }
+
+  case SX1276_EVENT_RX_CRC_ERROR:
+    log_line("RX: CRC error, packet dropped\r\n");
+    break;
+
+  default:
+    break;
+  }
 }
 
 /* USER CODE END 0 */
@@ -106,8 +193,8 @@ int main(void)
   MX_SPI1_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  /* First radio test: reset the SX1276, check RegVersion == 0x12 and
-   * configure LoRa (868 MHz, SF7, 10 dBm). */
+  /* Reset the SX1276, check RegVersion == 0x12 and configure LoRa
+   * (868 MHz, SF7, 10 dBm). */
   sx1276_config_t radio_cfg = sx1276_default_config();
   radio_status = sx1276_init(&radio, sx1276_port_hal(), &radio_cfg);
 
@@ -115,6 +202,18 @@ int main(void)
   snprintf(msg, sizeof(msg), "SX1276 init: status %d, RegVersion 0x%02X\r\n",
            radio_status, (unsigned)radio.version);
   log_line(msg);
+
+  if (radio_status == SX1276_OK) {
+    led_flashes(3, 80, 80);        /* radio found */
+#if RADIO_ROLE_TX
+    log_line("Role: transmitter\r\n");
+#else
+    log_line("Role: receiver\r\n");
+    if (sx1276_start_rx(&radio) != SX1276_OK) {
+      log_line("start RX failed\r\n");
+    }
+#endif
+  }
 
   /* USER CODE END 2 */
 
@@ -125,15 +224,34 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if (radio_status == SX1276_OK) {
-      /* Radio found: fast blink. */
-      HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-      HAL_Delay(100);
-    } else {
-      /* No radio or bad wiring: LED stays on (PC13 is active low). */
-      HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
-      HAL_Delay(1000);
+    if (radio_status != SX1276_OK) {
+      show_radio_error();
+      continue;
     }
+
+    /* Events from the radio: the interrupt only set a flag. */
+    if (sx1276_port_dio0_pending()) {
+      handle_radio_event();
+    }
+
+#if RADIO_ROLE_TX
+    uint32_t now = HAL_GetTick();
+    if (tx_busy && now - tx_started_ms > TX_TIMEOUT_MS) {
+      tx_busy = 0;                 /* TxDone was missed: do not get stuck */
+      log_line("TX timeout\r\n");
+    }
+    if (!tx_busy && now - last_ping_ms >= PING_PERIOD_MS) {
+      char ping[24];
+      int n = snprintf(ping, sizeof(ping), "ping %lu", (unsigned long)ping_counter++);
+      if (sx1276_send(&radio, (const uint8_t *)ping, (uint8_t)n) == SX1276_OK) {
+        tx_busy = 1;
+        tx_started_ms = now;
+      } else {
+        log_line("send failed\r\n");
+      }
+      last_ping_ms = now;
+    }
+#endif
   }
   /* USER CODE END 3 */
 }
@@ -312,6 +430,14 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+/* Called by the HAL from EXTI1_IRQHandler when DIO0 (PB1) goes high.
+ * Runs in interrupt context: only record the event, no SPI here. */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == RADIO_DIO0_Pin) {
+    sx1276_port_dio0_isr();
+  }
+}
 
 /* USER CODE END 4 */
 
