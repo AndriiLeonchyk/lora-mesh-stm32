@@ -12,12 +12,13 @@ Currently done:
 - Packet serialization with CRC16 (`core/packet.c`)
 - Mesh core: message deduplication, flooding forward decisions with TTL, random backoff (`core/dedup.c`, `core/mesh.c`)
 - SX1276 register map (`radio/sx1276_regs.h`)
-- SX1276 driver: SPI register access, reset, `RegVersion` check, LoRa set-up (frequency, power, SF) behind a platform interface (`radio/sx1276.c`), STM32 port in `platform/stm32/port`
+- SX1276 driver: SPI register access, reset, `RegVersion` check, LoRa set-up (frequency, power, SF), non-blocking transmit and continuous receive with the DIO0 interrupt, packet RSSI/SNR, behind a platform interface (`radio/sx1276.c`); STM32 port in `platform/stm32/port`
+- Radio link test firmware: one board sends `ping N` every 2 s, the other receives and logs RSSI/SNR over UART
 - LoRa time-on-air calculator (`tools/lora_airtime.py`)
 - Host unit tests for all of the above
 - Board bring-up: 72 MHz clock from the 8 MHz crystal, SPI1, USART1 and radio pins configured in STM32CubeMX; the firmware runs on both Blue Pill boards
 Planned: 
-- First radio test on real hardware (`RegVersion` = `0x12`), then LoRa TX/RX
+- Two-node link test on hardware and range measurements
 - Mesh logic developed and tested in simulation first (Python / C on PC)
 
 ## Features (planned)
@@ -38,10 +39,10 @@ core/              mesh logic in portable C, no hardware dependency
   mesh.c/.h        deliver / forward / drop decisions, backoff
 radio/             SX1276 (RFM95W) driver, no MCU dependency
   sx1276_regs.h    register map
-  sx1276.c/.h      register access, reset, LoRa configuration
+  sx1276.c/.h      register access, reset, LoRa configuration, TX/RX
 platform/stm32/
   blink/           STM32CubeMX project for the Blue Pill
-  port/            SX1276 platform functions on STM32 HAL (SPI1, PA4, PB0)
+  port/            SX1276 platform functions on STM32 HAL (SPI1, PA4, PB0, DIO0 flag)
 tests/             host unit tests (run on a PC)
 tools/             Python helper tools
 docs/              protocol, hardware and requirements
@@ -90,6 +91,21 @@ On Linux or macOS: `sh tests/run_tests.sh`. The same tests run automatically on 
 ### STM32 firmware
 Open `platform/stm32/blink` in VS Code with the STM32Cube extension and run **Build**.
 
+### Radio link test
+In `platform/stm32/blink/Core/Src/main.c` set `RADIO_ROLE_TX` to `1` for the transmitter or `0` for the receiver, build and flash each board. The receiver prints every packet to USART1 (PA9, 115200 8N1):
+```
+RX 7 B, RSSI -48 dBm, SNR 9 dB: ping 12
+```
+On-board LED (PC13):
+
+| LED | Meaning |
+|---|---|
+| 3 quick flashes at start | radio found and configured |
+| toggles on every packet | transmitter: packet sent; receiver: packet received |
+| 2 flashes, pause | `RegVersion` read as `0x00`: no power, or NSS/SCK/MISO not connected |
+| 3 flashes, pause | `RegVersion` read as `0xFF`: MISO floating or chip held in reset |
+| 4 flashes, pause | other start-up error (unstable contact, SPI error) |
+
 ### Tools
 LoRa time-on-air calculator (SF7..SF12, bit rate and packets per hour under a duty-cycle limit):
 ```
@@ -111,10 +127,10 @@ Host unit tests, run on a PC:
 - `tests/test_crc16.c`: CRC-16/CCITT-FALSE check values, every single-bit error detected, residue property
 - `tests/test_packet_edge.c`: empty payload, all frame types, unknown types rejected, wire layout, field extremes, any bit flip in a frame rejected, length and size boundaries
 - `tests/test_sx1276_regs.c`: SX1276 register map constants (868 MHz frequency word, SPI read/write bit, operating modes, IRQ flags)
-- `tests/test_sx1276.c`: SX1276 driver against a simulated chip (registers, FIFO, reset, sleep-only LoRa switch): SPI read/write bit, burst and FIFO access, reset and `RegVersion` check, missing chip detected, full LoRa configuration at SF7 and SF12, argument checks, NSS released after an SPI error
+- `tests/test_sx1276.c`: SX1276 driver against a simulated chip (registers, FIFO, reset, sleep-only LoRa switch): SPI read/write bit, burst and FIFO access, reset and `RegVersion` check, missing chip detected, full LoRa configuration at SF7 and SF12, argument checks, NSS released after an SPI error; transmit (FIFO, payload length, TxDone on DIO0), continuous receive (packet position from `RegFifoRxCurrentAddr`, CRC error, buffer too small), RSSI/SNR formula, and an end-to-end exchange between two simulated radios
 - `tests/test_mesh.c`: deduplication cache (including eviction), deliver/forward/drop decisions, own-packet echo, packet building and `msg_id` wrap-around, reboot with the same vs a new first `msg_id`, backoff range, a 4-node multi-hop line scenario
 
-All six suites pass. On hardware, the board bring-up firmware runs on both boards; the radio driver has not been tested with a real module yet.
+All six suites pass. On hardware, the driver finds the module (`RegVersion` = `0x12`) on the first node; the two-node radio link has not been tested yet.
 
 ## Roadmap
 - [x] Packet format with CRC16
@@ -123,8 +139,9 @@ All six suites pass. On hardware, the board bring-up firmware runs on both board
 - [x] Board bring-up: 72 MHz HSE clock, SPI1, USART1 and radio pins configured, firmware runs on both boards
 - [ ] Radio abstraction and multi-node network simulator on a PC
 - [x] SX1276 SPI driver with host tests against a simulated chip
-- [ ] First hardware test: read `RegVersion` = `0x12`
-- [ ] LoRa TX/RX with the DIO0 interrupt
+- [x] First hardware test: read `RegVersion` = `0x12`
+- [x] LoRa TX/RX with the DIO0 interrupt (driver and host tests)
+- [ ] Two-node ping test on hardware
 - [ ] Two-node LoRa link on real hardware, range and RSSI measurements
 - [ ] HELLO frames and neighbor table
 - [ ] AES-CCM encryption with replay protection

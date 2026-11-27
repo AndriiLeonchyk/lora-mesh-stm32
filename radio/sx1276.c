@@ -245,3 +245,121 @@ int sx1276_init(sx1276_t *dev, const sx1276_hal_t *hal, const sx1276_config_t *c
 
     return sx1276_set_mode(dev, SX1276_MODE_STDBY);
 }
+
+/* ---- Transmit and receive ---- */
+
+int sx1276_send(sx1276_t *dev, const uint8_t *data, uint8_t len)
+{
+    if (data == NULL || len == 0) {
+        return SX1276_ERR_ARGS;
+    }
+    /* The FIFO can only be filled in standby or sleep. */
+    int rc = sx1276_set_mode(dev, SX1276_MODE_STDBY);
+    if (rc != SX1276_OK) return rc;
+
+    /* Point the FIFO pointer at the TX area (base 0) and copy the data. */
+    rc = sx1276_write_reg(dev, SX1276_REG_FIFO_ADDR_PTR, 0x00);
+    if (rc != SX1276_OK) return rc;
+    rc = sx1276_write_burst(dev, SX1276_REG_FIFO, data, len);
+    if (rc != SX1276_OK) return rc;
+    rc = sx1276_write_reg(dev, SX1276_REG_PAYLOAD_LENGTH, len);
+    if (rc != SX1276_OK) return rc;
+
+    /* DIO0 = TxDone, and clear old flags so DIO0 starts low. */
+    rc = sx1276_write_reg(dev, SX1276_REG_DIO_MAPPING_1, SX1276_DIO0_TX_DONE);
+    if (rc != SX1276_OK) return rc;
+    rc = sx1276_write_reg(dev, SX1276_REG_IRQ_FLAGS, SX1276_IRQ_ALL);
+    if (rc != SX1276_OK) return rc;
+
+    /* Go: the chip sends the packet and returns to standby by itself. */
+    return sx1276_set_mode(dev, SX1276_MODE_TX);
+}
+
+int sx1276_start_rx(sx1276_t *dev)
+{
+    int rc = sx1276_set_mode(dev, SX1276_MODE_STDBY);
+    if (rc != SX1276_OK) return rc;
+
+    /* Received packets are written from the RX base (0). */
+    rc = sx1276_write_reg(dev, SX1276_REG_FIFO_ADDR_PTR, 0x00);
+    if (rc != SX1276_OK) return rc;
+    rc = sx1276_write_reg(dev, SX1276_REG_DIO_MAPPING_1, SX1276_DIO0_RX_DONE);
+    if (rc != SX1276_OK) return rc;
+    rc = sx1276_write_reg(dev, SX1276_REG_IRQ_FLAGS, SX1276_IRQ_ALL);
+    if (rc != SX1276_OK) return rc;
+
+    return sx1276_set_mode(dev, SX1276_MODE_RX_CONTINUOUS);
+}
+
+int sx1276_handle_dio0(sx1276_t *dev, sx1276_event_t *event)
+{
+    if (event == NULL) {
+        return SX1276_ERR_ARGS;
+    }
+    *event = SX1276_EVENT_NONE;
+
+    uint8_t flags = 0;
+    int rc = sx1276_read_reg(dev, SX1276_REG_IRQ_FLAGS, &flags);
+    if (rc != SX1276_OK) return rc;
+
+    /* Writing 1 clears a flag; this also brings DIO0 low again. */
+    rc = sx1276_write_reg(dev, SX1276_REG_IRQ_FLAGS, flags);
+    if (rc != SX1276_OK) return rc;
+
+    if (flags & SX1276_IRQ_TX_DONE) {
+        *event = SX1276_EVENT_TX_DONE;
+    } else if (flags & SX1276_IRQ_RX_DONE) {
+        *event = (flags & SX1276_IRQ_PAYLOAD_CRC_ERROR) ? SX1276_EVENT_RX_CRC_ERROR
+                                                        : SX1276_EVENT_RX_DONE;
+    }
+    return SX1276_OK;
+}
+
+int16_t sx1276_packet_rssi_dbm(uint8_t pkt_rssi, int8_t pkt_snr_raw)
+{
+    /* HF port (868 MHz): RSSI = -157 + PacketRssi.
+     * Below the noise floor (SNR < 0) the SNR is added: + SNR / 4. */
+    int16_t rssi = (int16_t)(-157 + (int16_t)pkt_rssi);
+    if (pkt_snr_raw < 0) {
+        rssi = (int16_t)(rssi + pkt_snr_raw / 4);
+    }
+    return rssi;
+}
+
+int sx1276_read_packet(sx1276_t *dev, uint8_t *buf, uint8_t max_len,
+                       sx1276_rx_info_t *info)
+{
+    if (buf == NULL || info == NULL) {
+        return SX1276_ERR_ARGS;
+    }
+    info->len = 0;
+
+    uint8_t len = 0;
+    uint8_t start = 0;
+    int rc = sx1276_read_reg(dev, SX1276_REG_RX_NB_BYTES, &len);
+    if (rc != SX1276_OK) return rc;
+    if (len > max_len) {
+        return SX1276_ERR_TOO_LONG;
+    }
+    /* In continuous RX each packet starts where the chip says. */
+    rc = sx1276_read_reg(dev, SX1276_REG_FIFO_RX_CURRENT_ADDR, &start);
+    if (rc != SX1276_OK) return rc;
+    rc = sx1276_write_reg(dev, SX1276_REG_FIFO_ADDR_PTR, start);
+    if (rc != SX1276_OK) return rc;
+    rc = sx1276_read_burst(dev, SX1276_REG_FIFO, buf, len);
+    if (rc != SX1276_OK) return rc;
+
+    uint8_t snr_raw = 0;
+    uint8_t rssi_raw = 0;
+    rc = sx1276_read_reg(dev, SX1276_REG_PKT_SNR_VALUE, &snr_raw);
+    if (rc != SX1276_OK) return rc;
+    rc = sx1276_read_reg(dev, SX1276_REG_PKT_RSSI_VALUE, &rssi_raw);
+    if (rc != SX1276_OK) return rc;
+
+    /* RegPktSnrValue is signed, in quarters of a dB. */
+    int8_t snr = (int8_t)snr_raw;
+    info->len = len;
+    info->snr_db = (int8_t)(snr / 4);
+    info->rssi_dbm = sx1276_packet_rssi_dbm(rssi_raw, snr);
+    return SX1276_OK;
+}

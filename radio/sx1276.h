@@ -17,8 +17,24 @@ typedef enum {
     SX1276_ERR_ARGS    = -1,  /* NULL pointer or value out of range */
     SX1276_ERR_SPI     = -2,  /* the platform SPI transfer failed */
     SX1276_ERR_VERSION = -3,  /* RegVersion is not 0x12: no chip or bad wiring */
-    SX1276_ERR_MODE    = -4   /* the chip did not switch to LoRa mode */
+    SX1276_ERR_MODE    = -4,  /* the chip did not switch to LoRa mode */
+    SX1276_ERR_TOO_LONG = -5  /* received packet does not fit the buffer */
 } sx1276_status_t;
+
+/* What happened when DIO0 fired (see sx1276_handle_dio0). */
+typedef enum {
+    SX1276_EVENT_NONE = 0,      /* no flag set (spurious interrupt) */
+    SX1276_EVENT_TX_DONE,       /* packet sent, chip is back in standby */
+    SX1276_EVENT_RX_DONE,       /* packet received with a valid CRC */
+    SX1276_EVENT_RX_CRC_ERROR   /* packet received but corrupted: drop it */
+} sx1276_event_t;
+
+/* A received packet with its signal quality. */
+typedef struct {
+    uint8_t len;        /* number of bytes copied to the buffer */
+    int16_t rssi_dbm;   /* received signal strength, e.g. -60 (strong) .. -130 */
+    int8_t  snr_db;     /* signal-to-noise ratio; LoRa works down to about -20 dB */
+} sx1276_rx_info_t;
 
 /* Platform functions. All of them are required.
  *
@@ -82,6 +98,32 @@ int sx1276_set_mode(sx1276_t *dev, uint8_t mode);
 int sx1276_set_frequency(sx1276_t *dev, uint32_t frequency_hz);
 int sx1276_set_tx_power(sx1276_t *dev, uint8_t dbm);
 int sx1276_set_spreading_factor(sx1276_t *dev, uint8_t sf);
+
+/* ---- Transmit and receive ----
+ * Both are non-blocking. The chip raises DIO0 when it is done; the
+ * interrupt handler only sets a flag, and the main loop then calls
+ * sx1276_handle_dio0() to find out what happened. */
+
+/* Copies data (1..255 bytes) into the FIFO and starts transmitting.
+ * Returns at once; SX1276_EVENT_TX_DONE follows when the packet is sent. */
+int sx1276_send(sx1276_t *dev, const uint8_t *data, uint8_t len);
+
+/* Puts the chip into continuous receive mode. It stays there and
+ * reports every packet with SX1276_EVENT_RX_DONE. */
+int sx1276_start_rx(sx1276_t *dev);
+
+/* Reads and clears the IRQ flags and tells what DIO0 signalled. */
+int sx1276_handle_dio0(sx1276_t *dev, sx1276_event_t *event);
+
+/* After SX1276_EVENT_RX_DONE: copies the received packet into buf
+ * (up to max_len bytes) and fills info. Returns SX1276_ERR_TOO_LONG if
+ * the packet is longer than max_len; nothing is copied then. */
+int sx1276_read_packet(sx1276_t *dev, uint8_t *buf, uint8_t max_len,
+                       sx1276_rx_info_t *info);
+
+/* Packet RSSI in dBm from RegPktRssiValue and RegPktSnrValue
+ * (868 MHz band, datasheet section 5.5.5). Pure function. */
+int16_t sx1276_packet_rssi_dbm(uint8_t pkt_rssi, int8_t pkt_snr_raw);
 
 /* FRF register value for a carrier frequency: f * 2^19 / 32 MHz.
  * 868 MHz -> 0xD90000. Pure function, no chip access. */

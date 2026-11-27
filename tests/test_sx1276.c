@@ -7,7 +7,11 @@
  *   - the address auto-increments, except for RegFifo (0x00), which
  *     reads/writes the FIFO at RegFifoAddrPtr and advances the pointer;
  *   - a RESET pulse restores the reset values (FSK mode, standby);
- *   - the LoRa bit in RegOpMode changes only while the chip sleeps. */
+ *   - the LoRa bit in RegOpMode changes only while the chip sleeps;
+ *   - writing 1 to a bit of RegIrqFlags clears it;
+ *   - switching to TX "sends" PayloadLength bytes from the TX base,
+ *     sets TxDone and goes back to standby;
+ *   - mock_receive() plays a packet arriving while the chip is in RX. */
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -42,6 +46,10 @@ typedef struct {
     int      transactions;         /* number of NSS low -> high cycles */
     uint8_t  first_bytes[64];      /* address byte of each transaction */
     int      n_first;
+    uint8_t  air[256];             /* last packet "sent over the air" */
+    int      air_len;
+    int      tx_count;
+    uint8_t  rx_write_pos;         /* where the next received packet goes */
 } mock_chip_t;
 
 static void mock_power_on(mock_chip_t *m)
@@ -78,8 +86,23 @@ static void mock_write(mock_chip_t *m, uint8_t value)
                               (old & SX1276_MODE_LONG_RANGE));
         }
     }
-    if (m->addr != SX1276_REG_VERSION) {          /* read-only register */
+    if (m->addr == SX1276_REG_IRQ_FLAGS) {
+        m->regs[m->addr] &= (uint8_t)~value;     /* write 1 to clear */
+    } else if (m->addr != SX1276_REG_VERSION) {  /* read-only register */
         m->regs[m->addr] = value;
+    }
+    if (m->addr == SX1276_REG_OP_MODE &&
+        (m->regs[SX1276_REG_OP_MODE] & SX1276_MODE_MASK) == SX1276_MODE_TX) {
+        /* Transmit: take PayloadLength bytes from the TX base address. */
+        uint8_t base = m->regs[SX1276_REG_FIFO_TX_BASE_ADDR];
+        m->air_len = m->regs[SX1276_REG_PAYLOAD_LENGTH];
+        for (int i = 0; i < m->air_len; i++) {
+            m->air[i] = m->fifo[(uint8_t)(base + i)];
+        }
+        m->tx_count++;
+        m->regs[SX1276_REG_IRQ_FLAGS] |= SX1276_IRQ_TX_DONE;
+        m->regs[SX1276_REG_OP_MODE] = (uint8_t)((m->regs[SX1276_REG_OP_MODE] &
+                                                 ~SX1276_MODE_MASK) | SX1276_MODE_STDBY);
     }
     m->addr = (uint8_t)((m->addr + 1u) & SX1276_SPI_ADDR_MASK);
 }
@@ -148,6 +171,40 @@ static void mock_delay_ms(void *ctx, uint32_t ms)
 {
     mock_chip_t *m = ctx;
     m->delay_total_ms += ms;
+}
+
+/* A packet arrives over the air. Only heard in continuous RX mode.
+ * It is written after the previous packet, as the real chip does. */
+static int mock_receive(mock_chip_t *m, const uint8_t *data, uint8_t len,
+                        uint8_t rssi_raw, int8_t snr_raw, int crc_error)
+{
+    if ((m->regs[SX1276_REG_OP_MODE] & SX1276_MODE_MASK) != SX1276_MODE_RX_CONTINUOUS) {
+        return 0;
+    }
+    uint8_t start = (uint8_t)(m->regs[SX1276_REG_FIFO_RX_BASE_ADDR] + m->rx_write_pos);
+    for (uint8_t i = 0; i < len; i++) {
+        m->fifo[(uint8_t)(start + i)] = data[i];
+    }
+    m->rx_write_pos = (uint8_t)(m->rx_write_pos + len);
+    m->regs[SX1276_REG_FIFO_RX_CURRENT_ADDR] = start;
+    m->regs[SX1276_REG_RX_NB_BYTES] = len;
+    m->regs[SX1276_REG_PKT_RSSI_VALUE] = rssi_raw;
+    m->regs[SX1276_REG_PKT_SNR_VALUE] = (uint8_t)snr_raw;
+    m->regs[SX1276_REG_IRQ_FLAGS] |= SX1276_IRQ_RX_DONE | SX1276_IRQ_VALID_HEADER;
+    if (crc_error) {
+        m->regs[SX1276_REG_IRQ_FLAGS] |= SX1276_IRQ_PAYLOAD_CRC_ERROR;
+    }
+    return 1;
+}
+
+/* DIO0 is high while the flag it is mapped to is set. */
+static int mock_dio0(const mock_chip_t *m)
+{
+    uint8_t map = m->regs[SX1276_REG_DIO_MAPPING_1] & 0xC0u;
+    uint8_t flags = m->regs[SX1276_REG_IRQ_FLAGS];
+    if (map == SX1276_DIO0_TX_DONE) return (flags & SX1276_IRQ_TX_DONE) != 0;
+    if (map == SX1276_DIO0_RX_DONE) return (flags & SX1276_IRQ_RX_DONE) != 0;
+    return 0;
 }
 
 static sx1276_hal_t mock_hal(mock_chip_t *m)
@@ -402,6 +459,178 @@ static void test_spi_failure_releases_nss(void)
     CHECK(m.nss == 1);
 }
 
+/* Brings up a chip with the default configuration. */
+static void setup(mock_chip_t *m, sx1276_hal_t *hal, sx1276_t *dev)
+{
+    mock_init(m, 0x12);
+    *hal = mock_hal(m);
+    sx1276_config_t cfg = sx1276_default_config();
+    CHECK(sx1276_init(dev, hal, &cfg) == SX1276_OK);
+}
+
+static void test_send(void)
+{
+    mock_chip_t m;
+    sx1276_hal_t hal;
+    sx1276_t dev;
+    setup(&m, &hal, &dev);
+
+    const uint8_t msg[] = "hello mesh";
+    CHECK(sx1276_send(&dev, msg, sizeof(msg)) == SX1276_OK);
+    CHECK(m.tx_count == 1);
+    CHECK(m.air_len == (int)sizeof(msg));
+    CHECK(memcmp(m.air, msg, sizeof(msg)) == 0);
+    CHECK(m.regs[SX1276_REG_PAYLOAD_LENGTH] == sizeof(msg));
+    /* DIO0 mapped to TxDone and raised; chip back in standby. */
+    CHECK((m.regs[SX1276_REG_DIO_MAPPING_1] & 0xC0u) == SX1276_DIO0_TX_DONE);
+    CHECK(mock_dio0(&m));
+    CHECK(m.regs[SX1276_REG_OP_MODE] == (SX1276_MODE_LONG_RANGE | SX1276_MODE_STDBY));
+
+    sx1276_event_t ev = SX1276_EVENT_NONE;
+    CHECK(sx1276_handle_dio0(&dev, &ev) == SX1276_OK);
+    CHECK(ev == SX1276_EVENT_TX_DONE);
+    CHECK(m.regs[SX1276_REG_IRQ_FLAGS] == 0);   /* flags cleared */
+    CHECK(!mock_dio0(&m));                       /* DIO0 low again */
+
+    /* A second, shorter packet does not carry bytes of the first. */
+    const uint8_t two[2] = { 0xAA, 0xBB };
+    CHECK(sx1276_send(&dev, two, 2) == SX1276_OK);
+    CHECK(m.tx_count == 2 && m.air_len == 2);
+    CHECK(m.air[0] == 0xAA && m.air[1] == 0xBB);
+}
+
+static void test_send_argument_checks(void)
+{
+    mock_chip_t m;
+    sx1276_hal_t hal;
+    sx1276_t dev;
+    setup(&m, &hal, &dev);
+    uint8_t b = 1;
+
+    CHECK(sx1276_send(&dev, NULL, 3) == SX1276_ERR_ARGS);
+    CHECK(sx1276_send(&dev, &b, 0) == SX1276_ERR_ARGS);
+    CHECK(m.tx_count == 0);
+
+    uint8_t big[255];
+    memset(big, 0x5A, sizeof(big));
+    CHECK(sx1276_send(&dev, big, 255) == SX1276_OK);   /* maximum LoRa payload */
+    CHECK(m.air_len == 255 && m.air[254] == 0x5A);
+}
+
+static void test_receive(void)
+{
+    mock_chip_t m;
+    sx1276_hal_t hal;
+    sx1276_t dev;
+    setup(&m, &hal, &dev);
+
+    /* Nothing is heard before RX is started. */
+    const uint8_t pkt[] = { 1, 2, 3, 4, 5, 6 };
+    CHECK(mock_receive(&m, pkt, sizeof(pkt), 100, 32, 0) == 0);
+
+    CHECK(sx1276_start_rx(&dev) == SX1276_OK);
+    CHECK(m.regs[SX1276_REG_OP_MODE] == (SX1276_MODE_LONG_RANGE | SX1276_MODE_RX_CONTINUOUS));
+    CHECK((m.regs[SX1276_REG_DIO_MAPPING_1] & 0xC0u) == SX1276_DIO0_RX_DONE);
+    CHECK(!mock_dio0(&m));
+
+    CHECK(mock_receive(&m, pkt, sizeof(pkt), 100, 32, 0) == 1);  /* SNR +8 dB */
+    CHECK(mock_dio0(&m));
+
+    sx1276_event_t ev = SX1276_EVENT_NONE;
+    CHECK(sx1276_handle_dio0(&dev, &ev) == SX1276_OK);
+    CHECK(ev == SX1276_EVENT_RX_DONE);
+    CHECK(!mock_dio0(&m));
+
+    uint8_t buf[32];
+    sx1276_rx_info_t info;
+    CHECK(sx1276_read_packet(&dev, buf, sizeof(buf), &info) == SX1276_OK);
+    CHECK(info.len == sizeof(pkt));
+    CHECK(memcmp(buf, pkt, sizeof(pkt)) == 0);
+    CHECK(info.rssi_dbm == -57);     /* -157 + 100 */
+    CHECK(info.snr_db == 8);
+
+    /* Still listening: a second packet lands after the first in the FIFO. */
+    const uint8_t pkt2[] = { 9, 8, 7 };
+    CHECK(mock_receive(&m, pkt2, sizeof(pkt2), 40, -40, 0) == 1);  /* SNR -10 dB */
+    CHECK(sx1276_handle_dio0(&dev, &ev) == SX1276_OK && ev == SX1276_EVENT_RX_DONE);
+    CHECK(sx1276_read_packet(&dev, buf, sizeof(buf), &info) == SX1276_OK);
+    CHECK(info.len == 3 && memcmp(buf, pkt2, 3) == 0);
+    CHECK(info.snr_db == -10);
+    CHECK(info.rssi_dbm == -127);    /* -157 + 40 - 10 */
+}
+
+static void test_receive_crc_error_and_too_long(void)
+{
+    mock_chip_t m;
+    sx1276_hal_t hal;
+    sx1276_t dev;
+    setup(&m, &hal, &dev);
+    CHECK(sx1276_start_rx(&dev) == SX1276_OK);
+
+    const uint8_t pkt[] = { 0xDE, 0xAD, 0xBE, 0xEF };
+    sx1276_event_t ev = SX1276_EVENT_NONE;
+
+    const uint8_t noise[] = { 0x11, 0x22, 0x33, 0x44 };
+    CHECK(mock_receive(&m, noise, sizeof(noise), 90, 20, 1) == 1);
+    CHECK(sx1276_handle_dio0(&dev, &ev) == SX1276_OK);
+    CHECK(ev == SX1276_EVENT_RX_CRC_ERROR);
+    CHECK(m.regs[SX1276_REG_IRQ_FLAGS] == 0);
+
+    /* Buffer too small: error, nothing copied. */
+    CHECK(mock_receive(&m, pkt, sizeof(pkt), 90, 20, 0) == 1);
+    CHECK(sx1276_handle_dio0(&dev, &ev) == SX1276_OK && ev == SX1276_EVENT_RX_DONE);
+    uint8_t small[3] = { 0, 0, 0 };
+    sx1276_rx_info_t info;
+    CHECK(sx1276_read_packet(&dev, small, sizeof(small), &info) == SX1276_ERR_TOO_LONG);
+    CHECK(info.len == 0 && small[0] == 0);
+
+    /* The corrupted packet was never read, so the FIFO pointer is not at
+     * the start of this one: the driver must use RegFifoRxCurrentAddr. */
+    uint8_t big[16];
+    CHECK(sx1276_read_packet(&dev, big, sizeof(big), &info) == SX1276_OK);
+    CHECK(info.len == sizeof(pkt) && memcmp(big, pkt, sizeof(pkt)) == 0);
+    CHECK(m.regs[SX1276_REG_FIFO_RX_CURRENT_ADDR] == sizeof(pkt));
+
+    CHECK(sx1276_read_packet(&dev, NULL, 8, &info) == SX1276_ERR_ARGS);
+    CHECK(sx1276_read_packet(&dev, small, 3, NULL) == SX1276_ERR_ARGS);
+    CHECK(sx1276_handle_dio0(&dev, NULL) == SX1276_ERR_ARGS);
+
+    /* Spurious interrupt: no flag set. */
+    CHECK(sx1276_handle_dio0(&dev, &ev) == SX1276_OK && ev == SX1276_EVENT_NONE);
+}
+
+static void test_rssi_formula(void)
+{
+    CHECK(sx1276_packet_rssi_dbm(0, 0) == -157);
+    CHECK(sx1276_packet_rssi_dbm(157, 0) == 0);
+    CHECK(sx1276_packet_rssi_dbm(60, 40) == -97);    /* SNR > 0: not added */
+    CHECK(sx1276_packet_rssi_dbm(30, -48) == -139);  /* -157 + 30 - 12 */
+}
+
+static void test_two_radios(void)
+{
+    /* End to end: what one chip sends, the other receives. */
+    mock_chip_t ma, mb;
+    sx1276_hal_t ha, hb;
+    sx1276_t a, b;
+    setup(&ma, &ha, &a);
+    setup(&mb, &hb, &b);
+    CHECK(sx1276_start_rx(&b) == SX1276_OK);
+
+    const uint8_t msg[] = "ping 1";
+    CHECK(sx1276_send(&a, msg, sizeof(msg)) == SX1276_OK);
+    CHECK(mock_receive(&mb, ma.air, (uint8_t)ma.air_len, 110, 36, 0) == 1);
+
+    sx1276_event_t ev;
+    CHECK(sx1276_handle_dio0(&a, &ev) == SX1276_OK && ev == SX1276_EVENT_TX_DONE);
+    CHECK(sx1276_handle_dio0(&b, &ev) == SX1276_OK && ev == SX1276_EVENT_RX_DONE);
+
+    uint8_t buf[64];
+    sx1276_rx_info_t info;
+    CHECK(sx1276_read_packet(&b, buf, sizeof(buf), &info) == SX1276_OK);
+    CHECK(info.len == sizeof(msg) && memcmp(buf, msg, sizeof(msg)) == 0);
+}
+
 int main(void)
 {
     test_frf_calculation();
@@ -416,6 +645,12 @@ int main(void)
     test_set_mode_keeps_lora();
     test_argument_checks();
     test_spi_failure_releases_nss();
+    test_send();
+    test_send_argument_checks();
+    test_receive();
+    test_receive_crc_error_and_too_long();
+    test_rssi_formula();
+    test_two_radios();
 
     if (failures == 0) {
         printf("test_sx1276: all tests passed\n");
