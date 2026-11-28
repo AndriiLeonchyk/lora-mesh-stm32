@@ -44,6 +44,9 @@
  * sub-band. Every 2 s it would be 2 %, which is not allowed. */
 #define PING_PERIOD_MS     5000u
 #define TX_TIMEOUT_MS      1000u   /* SF7, 20 bytes takes about 60 ms */
+/* The receiver also asks the radio every 100 ms whether a packet came in,
+ * so it still works if the DIO0 interrupt line is not connected. */
+#define RX_POLL_MS         100u
 
 /* USER CODE END PD */
 
@@ -236,6 +239,15 @@ int main(void)
     if (sx1276_port_dio0_pending()) {
       handle_radio_event();
     }
+#if !RADIO_ROLE_TX
+    else {
+      static uint32_t last_poll_ms;
+      if (HAL_GetTick() - last_poll_ms >= RX_POLL_MS) {
+        last_poll_ms = HAL_GetTick();
+        handle_radio_event();      /* reads RegIrqFlags; no flag = nothing to do */
+      }
+    }
+#endif
 
 #if RADIO_ROLE_TX
     uint32_t now = HAL_GetTick();

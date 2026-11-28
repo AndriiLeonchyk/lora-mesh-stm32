@@ -86,6 +86,31 @@ Problems met while bringing up the first nodes, how they were found and fixed.
 - **Prevention:** keep **SYS → Debug = Serial Wire** in STM32CubeMX, so the
   firmware never disables the SWD pins.
 
+### Programming fails on a running or empty board
+
+Seen on one of the two Blue Pills after many reflashes; the log messages
+and what fixed each of them:
+
+| STM32CubeProgrammer message | Cause | Fix |
+|---|---|---|
+| `failed to erase memory` (Mode: Normal) | the old firmware was running and got in the way | Mode **Under reset**, then **Full chip erase** before programming |
+| `failed to download Sector[0]`, then `The core is locked up` | the flash was erased but the write failed; with an empty flash the core locks up, which makes the next connect harder | connect the **NRST** line (see below) and program again; check for `Download verified successfully` |
+| `Unable to get core ID` / `DEV_TARGET_CMD_ERR`, log says `UR connection mode is defined with the HWrst reset mode` | Reset mode **Hardware reset** selected, but the ST-Link RST pin was not wired to the board | wire RST, or use **Software reset** and hold the RESET button while clicking Connect |
+| `No ST-LINK` in the serial number field | the programmer itself dropped off USB while wires were being moved | unplug and replug the ST-Link, press the refresh button |
+
+What made programming reliable:
+
+- A **fifth wire** from the ST-Link **RST** pin to the Blue Pill **R** (NRST)
+  pin, with Mode **Under reset** and Reset mode **Hardware reset**, and SWD
+  frequency **480 kHz**. The programmer then halts the core itself, even
+  when the flash is empty or the firmware has crashed. On the clone ST-Link
+  the RST pin sits next to SWIM; SWIM is for STM8 and must not be used.
+- STM32CubeProgrammer sometimes comes back with 4000 kHz / Hardware reset
+  after a restart; check the settings before every connect.
+- Another way to get out of a locked-up state (not needed here): set the
+  **BOOT0** jumper to 1, press RESET (the chip starts the built-in
+  bootloader instead of the firmware), program, then set BOOT0 back to 0.
+
 ### Radio not detected: RegVersion reads 0xFF
 
 - **Symptom:** the firmware reported a start-up error (LED: 3 flashes and a
@@ -113,6 +138,18 @@ Problems met while bringing up the first nodes, how they were found and fixed.
     the MISO path at once, with no UART adapter or debugger.
   - When a part that used to work fails, look for what the setups have in
     common (here the breadboard), not at the part itself.
+
+### Two-node link test
+
+- **Result:** the receiver's LED toggles in step with the transmitter's
+  (one ping every 5 s), so packets go through the air. Boards were about
+  30 cm apart, 868.1 MHz, SF7, 10 dBm.
+- **Pitfall:** an earlier "receiver hears nothing" test was not valid: the
+  receiver had not actually been reprogrammed (the programmer log showed
+  `failed to download Sector[0]`). Always check for
+  **"Download verified successfully"** before testing.
+- **Robustness:** the receiver also polls `RegIrqFlags` every 100 ms, so it
+  still receives if the DIO0 interrupt line is not connected.
 
 ### Start-up LED codes (PC13)
 

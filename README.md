@@ -18,7 +18,7 @@ Currently done:
 - Host unit tests for all of the above
 - Board bring-up: 72 MHz clock from the 8 MHz crystal, SPI1, USART1 and radio pins configured in STM32CubeMX; the firmware runs on both Blue Pill boards
 Planned: 
-- Two-node link test on hardware and range measurements
+- Range and RSSI/SNR measurements (UART log)
 - Mesh logic developed and tested in simulation first (Python / C on PC)
 
 ## Features (planned)
@@ -130,7 +130,7 @@ Host unit tests, run on a PC:
 - `tests/test_sx1276.c`: SX1276 driver against a simulated chip (registers, FIFO, reset, sleep-only LoRa switch): SPI read/write bit, burst and FIFO access, reset and `RegVersion` check, missing chip detected, full LoRa configuration at SF7 and SF12, argument checks, NSS released after an SPI error; transmit (FIFO, payload length, TxDone on DIO0), continuous receive (packet position from `RegFifoRxCurrentAddr`, CRC error, buffer too small), RSSI/SNR formula, and an end-to-end exchange between two simulated radios
 - `tests/test_mesh.c`: deduplication cache (including eviction), deliver/forward/drop decisions, own-packet echo, packet building and `msg_id` wrap-around, reboot with the same vs a new first `msg_id`, backoff range, a 4-node multi-hop line scenario
 
-All six suites pass. On hardware, the first node finds the module (`RegVersion` = `0x12`) and transmits pings (TxDone received on DIO0); the two-node radio link has not been tested yet. Bring-up problems and fixes are logged in [`docs/hardware.md`](docs/hardware.md).
+All six suites pass. On hardware, two nodes exchange packets: the transmitter sends a ping every 5 s and the receiver's LED toggles in step with it (verified on video, boards about 30 cm apart). RSSI/SNR have not been read yet (needs a UART adapter). Bring-up problems and fixes are logged in [`docs/hardware.md`](docs/hardware.md).
 
 ## Roadmap
 - [x] Packet format with CRC16
@@ -141,7 +141,7 @@ All six suites pass. On hardware, the first node finds the module (`RegVersion` 
 - [x] SX1276 SPI driver with host tests against a simulated chip
 - [x] First hardware test: read `RegVersion` = `0x12`
 - [x] LoRa TX/RX with the DIO0 interrupt (driver and host tests)
-- [ ] Two-node ping test on hardware
+- [x] Two-node ping test on hardware
 - [ ] Two-node LoRa link on real hardware, range and RSSI measurements
 - [ ] HELLO frames and neighbor table
 - [ ] AES-CCM encryption with replay protection
@@ -153,4 +153,4 @@ All six suites pass. On hardware, the first node finds the module (`RegVersion` 
 - Encryption design is not security-audited
 
 ## License
-MIT
+MIT
